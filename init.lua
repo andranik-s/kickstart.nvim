@@ -991,9 +991,13 @@ vim.keymap.set("n", "<C-d>", "<C-d>zz")
 vim.keymap.set("n", "<C-u>", "<C-u>zz")
 vim.keymap.set("n", "<leader>ei", ":e ~/.config/nvim/init.lua<CR>")
 vim.keymap.set("n", "-", ":Oil<CR>")
+vim.keymap.set("n", "]h", ":Gitsigns next_hunk<CR>")
+vim.keymap.set("n", "[h", ":Gitsigns prev_hunk<CR>")
 
 vim.pack.add { gh "tpope/vim-fugitive" }
 vim.pack.add { "https://github.com/stevearc/oil.nvim" }
 require("oil").setup()
 vim.pack.add { gh "Bekaboo/dropbar.nvim" }
 require('dropbar').setup()
+vim.pack.add { gh "sindrets/diffview.nvim" }
+require('diffview').setup()
