@@ -993,6 +993,7 @@ vim.keymap.set("n", "<leader>ei", ":e ~/.config/nvim/init.lua<CR>")
 vim.keymap.set("n", "-", ":Oil<CR>")
 vim.keymap.set("n", "]h", ":Gitsigns next_hunk<CR>")
 vim.keymap.set("n", "[h", ":Gitsigns prev_hunk<CR>")
+vim.keymap.set("n", "<C-s>", ":w<CR>")
 
 vim.pack.add { gh "tpope/vim-fugitive" }
 vim.pack.add { "https://github.com/stevearc/oil.nvim" }
