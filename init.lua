@@ -1000,5 +1000,4 @@ vim.pack.add { "https://github.com/stevearc/oil.nvim" }
 require("oil").setup()
 vim.pack.add { gh "Bekaboo/dropbar.nvim" }
 require('dropbar').setup()
-vim.pack.add { gh "sindrets/diffview.nvim" }
-require('diffview').setup()
+vim.pack.add { gh "nvim-tree/nvim-web-devicons" }
