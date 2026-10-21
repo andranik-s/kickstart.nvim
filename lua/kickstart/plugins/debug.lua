@@ -1,57 +1,101 @@
--- debug.lua
---
--- Shows how to use the DAP plugin to debug your code.
---
--- Primarily focused on configuring the debugger for Go, but can
--- be extended to other languages as well. That's why it's called
--- kickstart.nvim and not kitchen-sink.nvim ;)
-
+-- C/C++ debugging with LLVM's lldb-dap. See README.md for the workflow.
 vim.pack.add {
   'https://github.com/mfussenegger/nvim-dap',
   'https://github.com/rcarriga/nvim-dap-ui',
   'https://github.com/nvim-neotest/nvim-nio',
-  'https://github.com/mason-org/mason.nvim',
-  'https://github.com/jay-babu/mason-nvim-dap.nvim',
-  'https://github.com/leoluz/nvim-dap-go',
 }
-
--- Basic debugging keymaps, feel free to change to your liking!
-vim.keymap.set('n', '<F5>', function() require('dap').continue() end, { desc = 'Debug: Start/Continue' })
-vim.keymap.set('n', '<F1>', function() require('dap').step_into() end, { desc = 'Debug: Step Into' })
-vim.keymap.set('n', '<F2>', function() require('dap').step_over() end, { desc = 'Debug: Step Over' })
-vim.keymap.set('n', '<F3>', function() require('dap').step_out() end, { desc = 'Debug: Step Out' })
-vim.keymap.set('n', '<leader>b', function() require('dap').toggle_breakpoint() end, { desc = 'Debug: Toggle Breakpoint' })
-vim.keymap.set('n', '<leader>B', function() require('dap').set_breakpoint(vim.fn.input 'Breakpoint condition: ') end, { desc = 'Debug: Set Breakpoint' })
--- Toggle to see last session result. Without this, you can't see session output in case of unhandled exception.
-vim.keymap.set('n', '<F7>', function() require('dapui').toggle() end, { desc = 'Debug: See last session result.' })
 
 local dap = require 'dap'
 local dapui = require 'dapui'
 
-require('mason-nvim-dap').setup {
-  -- Makes a best effort to setup the various debuggers with
-  -- reasonable debug configurations
-  automatic_installation = true,
+-- Ubuntu installs versioned names such as lldb-dap-18. Prefer an unversioned
+-- binary, then try versioned binaries on PATH. Set vim.g.lldb_dap before this
+-- module is loaded to use a particular LLVM installation.
+local function find_lldb_dap()
+  if vim.g.lldb_dap then return vim.fn.exepath(vim.g.lldb_dap) end
+  local command = vim.fn.exepath 'lldb-dap'
+  if command ~= '' then return command end
+  local candidates = {}
+  local separator = vim.fn.has 'win32' == 1 and ';' or ':'
+  for _, directory in ipairs(vim.split(vim.env.PATH or '', separator, { plain = true, trimempty = true })) do
+    vim.list_extend(candidates, vim.fn.glob(directory .. '/lldb-dap-[0-9]*', false, true))
+  end
+  table.sort(candidates, function(a, b) return (tonumber(a:match '(%d+)$') or 0) > (tonumber(b:match '(%d+)$') or 0) end)
+  for _, candidate in ipairs(candidates) do
+    if vim.fn.executable(candidate) == 1 then return candidate end
+  end
+  return ''
+end
 
-  -- You can provide additional configuration to the handlers,
-  -- see mason-nvim-dap README for more information
-  handlers = {},
-
-  -- You'll need to check that you have the required things installed
-  -- online, please don't ask me how to install them :)
-  ensure_installed = {
-    -- Update this to ensure that you have the debuggers for the langs you want
-    'delve',
-  },
+local lldb_dap = find_lldb_dap()
+dap.adapters['lldb-dap'] = {
+  type = 'executable',
+  command = lldb_dap ~= '' and lldb_dap or 'lldb-dap',
+  name = 'lldb',
 }
 
--- Dap UI setup
--- For more information, see |:help nvim-dap-ui|
+local function pick_program()
+  if lldb_dap == '' then
+    vim.notify('lldb-dap not found. Install LLDB or set vim.g.lldb_dap to its executable path.', vim.log.levels.ERROR)
+    return dap.ABORT
+  end
+  local path = vim.fn.input { prompt = 'Path to executable: ', default = vim.fn.getcwd() .. '/', completion = 'file' }
+  if path == '' then return dap.ABORT end
+  path = vim.fn.fnamemodify(vim.fn.expand(path), ':p')
+  if vim.fn.executable(path) ~= 1 or vim.fn.isdirectory(path) == 1 then
+    vim.notify('Not an executable file: ' .. path .. '. Build with -g -O0 first.', vim.log.levels.ERROR)
+    return dap.ABORT
+  end
+  return path
+end
+
+for _, filetype in ipairs { 'c', 'cpp' } do
+  dap.configurations[filetype] = {
+    {
+      name = 'C/C++: Launch executable (LLDB)',
+      type = 'lldb-dap',
+      request = 'launch',
+      program = pick_program,
+      cwd = '${workspaceFolder}',
+      args = {},
+      stopOnEntry = false,
+      -- Disable stalled debuginfod downloads while preserving local symbol lookup.
+      initCommands = { 'settings clear plugin.symbol-locator.debuginfod.server-urls' },
+      -- A terminal resize should not interrupt the program.
+      preRunCommands = { 'process handle -p true -s false -n false SIGWINCH' },
+      -- Supported by LLDB 18 as well as newer versions; allows stdin input.
+      runInTerminal = true,
+    },
+    {
+      name = 'C/C++: Attach to process (LLDB)',
+      type = 'lldb-dap',
+      request = 'attach',
+      pid = require('dap.utils').pick_process,
+      cwd = '${workspaceFolder}',
+      initCommands = { 'settings clear plugin.symbol-locator.debuginfod.server-urls' },
+      preRunCommands = { 'process handle -p true -s false -n false SIGWINCH' },
+    },
+  }
+end
+
+vim.keymap.set('n', '<F5>', dap.continue, { desc = 'Debug: Start / Continue' })
+vim.keymap.set('n', '<F10>', dap.step_over, { desc = 'Debug: Step Over' })
+vim.keymap.set('n', '<F11>', dap.step_into, { desc = 'Debug: Step Into' })
+vim.keymap.set('n', '<S-F11>', dap.step_out, { desc = 'Debug: Step Out' })
+vim.keymap.set('n', '<F7>', dapui.toggle, { desc = 'Debug: Toggle UI' })
+vim.keymap.set('n', '<leader>dc', dap.continue, { desc = '[D]ebug: Start / [C]ontinue' })
+vim.keymap.set('n', '<leader>db', dap.toggle_breakpoint, { desc = '[D]ebug: Toggle [B]reakpoint' })
+vim.keymap.set('n', '<leader>dB', function() dap.set_breakpoint(vim.fn.input 'Breakpoint condition: ') end, { desc = '[D]ebug: Conditional [B]reakpoint' })
+vim.keymap.set('n', '<leader>dn', dap.step_over, { desc = '[D]ebug: [N]ext line (step over)' })
+vim.keymap.set('n', '<leader>di', dap.step_into, { desc = '[D]ebug: Step [I]nto' })
+vim.keymap.set('n', '<leader>do', dap.step_out, { desc = '[D]ebug: Step [O]ut' })
+vim.keymap.set('n', '<leader>dt', dap.terminate, { desc = '[D]ebug: [T]erminate' })
+vim.keymap.set('n', '<leader>dr', dap.run_last, { desc = '[D]ebug: [R]un last' })
+vim.keymap.set('n', '<leader>du', dapui.toggle, { desc = '[D]ebug: Toggle [U]I' })
+vim.keymap.set({ 'n', 'x' }, '<leader>de', function() dapui.eval() end, { desc = '[D]ebug: [E]valuate expression' })
+
 ---@diagnostic disable-next-line: missing-fields
 dapui.setup {
-  -- Set icons to characters that are more likely to work in every terminal.
-  --    Feel free to remove or use ones that you like more! :)
-  --    Don't feel like these are good choices.
   icons = { expanded = '▾', collapsed = '▸', current_frame = '*' },
   ---@diagnostic disable-next-line: missing-fields
   controls = {
@@ -69,27 +113,6 @@ dapui.setup {
   },
 }
 
--- Change breakpoint icons
--- vim.api.nvim_set_hl(0, 'DapBreak', { fg = '#e51400' })
--- vim.api.nvim_set_hl(0, 'DapStop', { fg = '#ffcc00' })
--- local breakpoint_icons = vim.g.have_nerd_font
---     and { Breakpoint = '', BreakpointCondition = '', BreakpointRejected = '', LogPoint = '', Stopped = '' }
---   or { Breakpoint = '●', BreakpointCondition = '⊜', BreakpointRejected = '⊘', LogPoint = '◆', Stopped = '⭔' }
--- for type, icon in pairs(breakpoint_icons) do
---   local tp = 'Dap' .. type
---   local hl = (type == 'Stopped') and 'DapStop' or 'DapBreak'
---   vim.fn.sign_define(tp, { text = icon, texthl = hl, numhl = hl })
--- end
-
-dap.listeners.after.event_initialized['dapui_config'] = dapui.open
-dap.listeners.before.event_terminated['dapui_config'] = dapui.close
-dap.listeners.before.event_exited['dapui_config'] = dapui.close
-
--- Install golang specific config
-require('dap-go').setup {
-  delve = {
-    -- On Windows delve must be run attached or it crashes.
-    -- See https://github.com/leoluz/nvim-dap-go/blob/main/README.md#configuring
-    detached = vim.fn.has 'win32' == 0,
-  },
-}
+dap.listeners.after.event_initialized['dapui_config'] = function() dapui.open() end
+dap.listeners.before.event_terminated['dapui_config'] = function() dapui.close() end
+dap.listeners.before.event_exited['dapui_config'] = function() dapui.close() end

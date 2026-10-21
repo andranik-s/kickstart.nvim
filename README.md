@@ -1,5 +1,134 @@
 # kickstart.nvim
 
+## Personal keymaps and C++ debugging
+
+The leader key is **Space**. Restart Neovim after updating this config; `vim.pack`
+installs the three debugger plugins on the first start.
+
+### Git hunks
+
+These mappings are available in buffers attached to a Git repository.
+
+| Keys | Action |
+| --- | --- |
+| `]h` / `[h` (also `]c` / `[c`) | Next / previous hunk |
+| `<leader>hp` / `<leader>hi` | Preview hunk in a popup / inline |
+| `<leader>hr` | Reset (undo/discard) the current hunk; `u` undoes the reset |
+| `<leader>hs` | Stage the current hunk; on a staged hunk, unstage it |
+| `<leader>hS` / `<leader>hR` | Stage / reset all changes in this buffer |
+| `<leader>hb` | Blame the current line |
+| `<leader>hd` / `<leader>hD` | Diff against the index / last commit |
+| `<leader>hq` / `<leader>hQ` | List changes in this file / repository in quickfix |
+| `<leader>tb` / `<leader>tw` | Toggle inline blame / word diff |
+| `ih` | Hunk text object, e.g. `vih` to select a hunk |
+
+In visual mode, `<leader>hs` and `<leader>hr` act on the selected lines.
+Reset changes the editor buffer; save with `:w` to write it to disk.
+
+### LSP
+
+Available after a language server attaches (C/C++ uses clangd):
+
+| Keys | Action |
+| --- | --- |
+| `<leader>gd` / `<leader>gD` | Definition / declaration |
+| `<leader>gr` / `<leader>gi` / `<leader>gt` | References / implementation / type definition |
+| `<leader>gn` / `<leader>ga` | Rename / code action (also visual mode for code actions) |
+| `<leader>gs` / `<leader>gS` | Document / workspace symbols |
+| `K` / `<C-t>` | Hover documentation / jump back |
+
+Press `<leader>g`, `<leader>h`, or `<leader>d` to see the available actions in which-key.
+
+### Debug a C++ program
+
+The config uses [nvim-dap](https://github.com/mfussenegger/nvim-dap),
+[nvim-dap-ui](https://github.com/rcarriga/nvim-dap-ui), and LLVM's
+[lldb-dap](https://github.com/llvm/llvm-project/blob/main/lldb/tools/lldb-dap/README.md).
+It detects `lldb-dap` or a versioned executable such as `lldb-dap-18` on `PATH`.
+This machine already has `/usr/bin/lldb-dap-18`. On Ubuntu 24.04, if needed,
+install it with `sudo apt install lldb-18`.
+For another location, set `vim.g.lldb_dap = '/absolute/path/to/lldb-dap'` in
+`init.lua` before `require 'kickstart.plugins.debug'`.
+
+1. Open Neovim from the project root (`cd your-project && nvim main.cpp`).
+   The debugger uses Neovim's working directory for the program's working directory.
+2. Build with debug information and optimizations disabled:
+
+   ```sh
+   mkdir -p build
+   clang++ -std=c++20 -g -O0 main.cpp -o build/app
+   # g++ works with the same flags.
+   ```
+
+   For CMake projects, configure with `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug`,
+   then run `cmake --build build` (multi-config generators also need `--config Debug`).
+   The debugger launches a compiled executable; it does not build the project.
+3. Put the cursor on an executable source line and press `<leader>db` to set a breakpoint.
+4. Press `<F5>` (or `<leader>dc`), select **C/C++: Launch executable (LLDB)**,
+   and enter the executable path, e.g. `build/app`. The debugger UI opens automatically.
+5. When execution pauses, inspect locals in **Scopes**, expand values with Enter,
+   and add expressions in **Watches** with `a`. Use `<leader>de` to inspect the
+   word under the cursor or a visual selection. The integrated terminal supports
+   program input; enter insert mode there to type. Use `<Esc><Esc>` to leave terminal mode.
+6. Continue or step using the keys below; stop with `<leader>dt`. Rebuild after source changes.
+
+| Keys | Action |
+| --- | --- |
+| `<F5>` / `<leader>dc` | Start / continue |
+| `<F10>` / `<leader>dn` | Step over (next line without entering the called function) |
+| `<F11>` / `<leader>di` | Step into a called function |
+| `<S-F11>` / `<leader>do` | Step out to the caller |
+| `<leader>db` / `<leader>dB` | Toggle breakpoint / set conditional breakpoint, e.g. `i == 10` |
+| `<leader>de` | Evaluate expression under cursor / visual selection |
+| `<F7>` / `<leader>du` | Toggle debugger UI (also reopens it after the session ends) |
+| `<leader>dr` / `<leader>dt` | Run last configuration / terminate session |
+
+To debug a running process, choose **C/C++: Attach to process (LLDB)** on `<F5>`
+and select its PID. The OS must allow attaching to that process.
+
+For persistent executable paths, arguments, and environment variables, create
+`.vscode/launch.json` in the project root. nvim-dap reads it automatically on `<F5>`:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug app",
+      "type": "lldb-dap",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/app",
+      "cwd": "${workspaceFolder}",
+      "args": ["--example", "value"],
+      "env": { "EXAMPLE": "1" },
+      "stopOnEntry": false,
+      "initCommands": ["settings clear plugin.symbol-locator.debuginfod.server-urls"],
+      "preRunCommands": ["process handle -p true -s false -n false SIGWINCH"],
+      "runInTerminal": true
+    }
+  ]
+}
+```
+
+Use valid JSON without comments or trailing commas. Choose **Debug app** on `<F5>`.
+`runInTerminal` supports the installed LLDB 18; LLVM 21+ also supports
+`"console": "integratedTerminal"`.
+
+The default configurations disable debuginfod downloads because this machine's
+Ubuntu symbol server connection stalled LLDB during verification. Symbols in your
+executable and locally installed debug symbol files remain available. To enable
+downloads for system libraries, use a project launch configuration without that
+`initCommands` setting.
+The `preRunCommands` entry lets Unix terminal resize signals pass without pausing.
+
+If breakpoints are not hit, check that you built with `-g -O0`, selected the right
+binary, and rebuilt after editing. `:DapShowLog` shows adapter errors.
+
+Verification with the installed LLDB 18.1.3 hit a breakpoint, inspected a local,
+stepped, and exited the test program with code 0. The adapter then crashed in
+`SBTarget::GetStatistics` while ending the session. If you encounter this exit-time
+crash, update LLDB and select its executable with `vim.g.lldb_dap` as shown above.
+
 ## Introduction
 
 A starting point for Neovim that is:
