@@ -5,6 +5,28 @@
 The leader key is **Space**. Restart Neovim after updating this config; `vim.pack`
 installs the three debugger plugins on the first start.
 
+### Copy a file location or lines
+
+`<leader>yp` (**Space y p**) copies the current file path and line to the system
+clipboard, for example `src/main.cpp:42`. Paths are relative to Neovim's working
+directory. The reference is also available with `p` inside Neovim.
+
+- Prefix with a count to include that many following lines: `5<leader>yp` at
+  line 42 copies `src/main.cpp:42-47`. The range stops at the end of the file.
+- In visual mode, `<leader>yp` copies the selected line range, for example
+  `src/main.cpp:42-47`.
+
+`<leader>yl` (**Space y l**) copies the file reference followed by the actual
+lines, preserving indentation and blank lines. It supports the same counts and
+visual selections as `<leader>yp`; visual mode copies whole lines. For example,
+`1<leader>yl` at line 42 copies:
+
+```text
+src/main.cpp:42-43
+  int answer = 42;
+  return answer;
+```
+
 ### Git hunks
 
 These mappings are available in buffers attached to a Git repository.

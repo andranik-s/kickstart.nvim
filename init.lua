@@ -185,6 +185,48 @@ do
   --  See `:help hlsearch`
   vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
+  -- Copy a file reference, optionally with its lines; a count adds following lines.
+  local function copy_file_location(first_line, last_line, include_lines)
+    local path = vim.fn.expand '%:.'
+    if path == '' or vim.bo.buftype ~= '' then
+      vim.notify('Current buffer is not a file', vim.log.levels.WARN)
+      return
+    end
+
+    local location = string.format('%s:%d', path, first_line)
+    if last_line > first_line then location = string.format('%s-%d', location, last_line) end
+    local text = location
+    if include_lines then
+      local lines = vim.api.nvim_buf_get_lines(0, first_line - 1, last_line, false)
+      text = location .. '\n' .. table.concat(lines, '\n')
+    end
+    vim.fn.setreg('"', text, 'v')
+    vim.fn.setreg('+', text, 'v')
+    vim.notify('Copied: ' .. location)
+  end
+
+  vim.keymap.set('n', '<leader>yp', function()
+    local line = vim.fn.line '.'
+    copy_file_location(line, math.min(line + vim.v.count, vim.fn.line '$'))
+  end, { desc = '[Y]ank file [P]osition (count adds lines)' })
+
+  vim.keymap.set('x', '<leader>yp', function()
+    local anchor, cursor = vim.fn.line 'v', vim.fn.line '.'
+    vim.cmd.normal { vim.keycode '<Esc>', bang = true }
+    copy_file_location(math.min(anchor, cursor), math.max(anchor, cursor))
+  end, { desc = '[Y]ank file [P]osition range' })
+
+  vim.keymap.set('n', '<leader>yl', function()
+    local line = vim.fn.line '.'
+    copy_file_location(line, math.min(line + vim.v.count, vim.fn.line '$'), true)
+  end, { desc = '[Y]ank [L]ines with file position (count adds lines)' })
+
+  vim.keymap.set('x', '<leader>yl', function()
+    local anchor, cursor = vim.fn.line 'v', vim.fn.line '.'
+    vim.cmd.normal { vim.keycode '<Esc>', bang = true }
+    copy_file_location(math.min(anchor, cursor), math.max(anchor, cursor), true)
+  end, { desc = '[Y]ank [L]ines with file position' })
+
   -- Diagnostic Config & Keymaps
   --  See `:help vim.diagnostic.Opts`
   vim.diagnostic.config {
@@ -362,6 +404,7 @@ do
       { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } },
       { '<leader>g', group = 'LSP / [G]oto', mode = { 'n', 'x' } },
       { '<leader>d', group = '[D]ebug', mode = { 'n', 'x' } },
+      { '<leader>y', group = '[Y]ank', mode = { 'n', 'x' } },
     },
   }
 
